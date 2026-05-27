@@ -3,305 +3,633 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MTA Transit Card Preview</title>
+  <title>MTA Transit Card Builder</title>
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      background: #1c1c1e;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 40px 20px;
+      background: #161618;
+      color: #e0e0e0;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      display: grid;
+      grid-template-columns: 300px 380px 1fr;
+      grid-template-rows: auto 1fr;
       min-height: 100vh;
-      margin: 0;
-      box-sizing: border-box;
     }
-    .card-wrapper {
-      width: 380px;
+
+    header {
+      grid-column: 1 / -1;
+      background: #0d0d0d;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
-    h3 {
-      color: #555;
-      font-family: sans-serif;
-      font-size: 11px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin: 0 0 10px 4px;
+    header h1 { font-size: 15px; font-weight: 700; color: #fff; }
+    header span { font-size: 12px; color: #555; }
+
+    .panel {
+      padding: 20px;
+      border-right: 1px solid #222;
+      overflow-y: auto;
+      height: calc(100vh - 49px);
     }
+    .panel:last-child { border-right: none; }
+
+    .panel-title {
+      font-size: 10px; font-weight: 700; color: #555;
+      text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 14px;
+    }
+
+    .field { margin-bottom: 12px; }
+    label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; }
+
+    input, select {
+      width: 100%; background: #1e1e1e; border: 1px solid #333;
+      border-radius: 7px; color: #fff; font-size: 13px;
+      padding: 7px 10px; outline: none; transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: #555; }
+    input:disabled, select:disabled { opacity: 0.4; }
+    select option { background: #1e1e1e; }
+
+    hr { border: none; border-top: 1px solid #222; margin: 14px 0; }
+
+    button {
+      cursor: pointer; border: none; border-radius: 7px;
+      font-size: 12px; font-weight: 600; padding: 7px 14px;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.8; }
+    button:disabled { opacity: 0.35; cursor: default; }
+
+    .btn-primary  { background: #0a84ff; color: #fff; width: 100%; }
+    .btn-add      { background: #1e3a1e; color: #4caf50; width: 100%; margin-top: 4px; }
+    .btn-ghost    { background: #2a2a2a; color: #aaa; width: 100%; }
+    .btn-remove   { background: transparent; color: #555; font-size: 15px; padding: 0 4px; line-height: 1; }
+    .btn-copy     { background: #2a2a2a; color: #aaa; width: 100%; margin-top: 8px; font-size: 11px; }
+    .btn-copy.copied { background: #1a3a1a; color: #4caf50; }
+
+    /* ── Connection status ── */
+    .connect-row { display: flex; gap: 8px; }
+    .connect-row input { flex: 1; }
+    .connect-row button { flex-shrink: 0; white-space: nowrap; }
+    .connect-status { font-size: 11px; margin-top: 6px; min-height: 15px; }
+    .connect-status.ok    { color: #4caf50; }
+    .connect-status.error { color: #ff5c5c; }
+    .connect-status.loading { color: #888; }
+
+    /* ── Card entries ── */
+    .entry {
+      background: #1a1a1a; border: 1px solid #2a2a2a;
+      border-radius: 8px; padding: 9px 10px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .entry-badge {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 13px; flex-shrink: 0;
+    }
+    .entry-badge.pill {
+      width: auto; padding: 0 7px; border-radius: 13px; font-size: 10px;
+    }
+    .entry-info { flex: 1; min-width: 0; }
+    .entry-route { font-size: 12px; font-weight: 600; color: #fff; }
+    .entry-stop  { font-size: 11px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Preview panel ── */
+    #card-root { min-height: 60px; }
+    .p-status { font-size: 11px; color: #555; margin-top: 8px; min-height: 15px; }
+    .p-status.ok    { color: #4caf50; }
+    .p-status.error { color: #ff5c5c; }
+
+    /* ── YAML / debug ── */
+    #yaml-output, #debug-output {
+      width: 100%; background: #111; border: 1px solid #222;
+      border-radius: 8px; color: #a8d8a8;
+      font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+      padding: 12px; white-space: pre; overflow-x: auto;
+      line-height: 1.6; resize: none; min-height: 100px;
+    }
+    #debug-output { color: #0f0; margin-top: 14px; min-height: 60px; }
+
+    /* ── Inline MTA card styles ── */
+    .mta-board { background: #0d0d0d; border-radius: 14px; padding: 14px 16px; color: #fff; }
+    .mta-stop + .mta-stop { margin-top: 14px; padding-top: 14px; border-top: 1px solid #222; }
+    .mta-stop-header { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+    .mta-stop-icon { font-size: 13px; }
+    .mta-stop-name { font-size: 11px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.1em; }
+    .mta-route-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 10px; padding: 4px 0; min-height: 36px; }
+    .mta-bullet { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; flex-shrink: 0; }
+    .mta-pill { height: 26px; padding: 0 8px; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; white-space: nowrap; }
+    .mta-headsign { font-size: 14px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mta-times { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: #fff; text-align: right; }
+    .mta-times.empty { color: #444; font-weight: 400; }
+    .mta-dot { color: #3a3a3a; margin: 0 5px; }
+    .mta-unit { font-size: 10px; color: #666; margin-left: 1px; }
+    .mta-arr { color: #ff5c5c; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+    .mta-footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #1a1a1a; font-size: 10px; color: #383838; display: flex; justify-content: space-between; }
   </style>
 </head>
 <body>
-<div class="card-wrapper">
-  <h3>Preview — mock data</h3>
+
+<header>
+  <h1>MTA Transit Card Builder</h1>
+</header>
+
+<!-- ── LEFT: builder ── -->
+<div class="panel">
+
+  <!-- Step 1: connect -->
+  <div class="panel-title">1 · API Connection</div>
+  <div class="field">
+    <label>Metro ID</label>
+    <div class="connect-row">
+      <input id="metro-id" value="mta" />
+      <button class="btn-ghost" style="width:auto" onclick="connect()">Connect</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>API URL</label>
+    <input id="api-url" value="http://localhost:8000" />
+  </div>
+  <div id="connect-status" class="connect-status"></div>
+
+  <hr />
+
+  <!-- Step 2: pick route → stop → direction -->
+  <div class="panel-title">2 · Add a Route</div>
+
+  <div class="field">
+    <label>Route</label>
+    <select id="sel-route" disabled onchange="onRouteChange()">
+      <option value="">— connect first —</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Stop</label>
+    <select id="sel-stop" disabled onchange="onStopChange()">
+      <option value="">— pick a route —</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Direction</label>
+    <select id="sel-direction" disabled>
+      <option value="">— pick a stop —</option>
+    </select>
+  </div>
+
+  <button class="btn-add" id="btn-add" disabled onclick="addEntry()">+ Add to Card</button>
+
+  <hr />
+
+  <!-- Card entries list -->
+  <div class="panel-title">3 · Card Entries <span id="entry-count" style="color:#333">0</span></div>
+  <div id="entries-list"></div>
+
+  <hr />
+
+  <!-- Settings -->
+  <div class="panel-title">Settings</div>
+  <div class="field">
+    <label>Predictions per route</label>
+    <input id="limit" type="number" value="3" min="1" max="10" oninput="updateYaml()" />
+  </div>
+  <div class="field">
+    <label>Refresh (seconds)</label>
+    <input id="refresh" type="number" value="30" min="10" oninput="updateYaml()" />
+  </div>
+
+  <button class="btn-primary" onclick="fetchAndRender()" style="margin-top:4px">▶ Fetch & Preview</button>
+</div>
+
+<!-- ── MIDDLE: preview ── -->
+<div class="panel">
+  <div class="panel-title">Preview</div>
   <div id="card-root"></div>
+  <div id="p-status" class="p-status"></div>
+</div>
+
+<!-- ── RIGHT: YAML + debug ── -->
+<div class="panel">
+  <div class="panel-title">Lovelace YAML</div>
+  <textarea id="yaml-output" readonly></textarea>
+  <button class="btn-copy" id="copy-btn" onclick="copyYaml()">Copy YAML</button>
+
+  <div class="panel-title" style="margin-top:18px">Last Request / Response</div>
+  <div id="debug-output">No request yet</div>
 </div>
 
 <script>
-// ── Mock data ────────────────────────────────────────────────────────────────
-const now = Math.floor(Date.now() / 1000);
-
-const MOCK_DATA = {
-  "640::4":        { predictions: [{ headsign: "Woodlawn",            arrival_time: now + 120  },
-                                   { headsign: "Woodlawn",            arrival_time: now + 480  },
-                                   { headsign: "Woodlawn",            arrival_time: now + 840  }] },
-  "640::5":        { predictions: [{ headsign: "Eastchester–Dyre Av", arrival_time: now + 45   },
-                                   { headsign: "Eastchester–Dyre Av", arrival_time: now + 390  }] },
-  "640::6":        { predictions: [{ headsign: "Pelham Bay Park",     arrival_time: now + 210  },
-                                   { headsign: "Pelham Bay Park",     arrival_time: now + 600  },
-                                   { headsign: "Pelham Bay Park",     arrival_time: now + 970  }] },
-  "400769::M86-SBS": { predictions: [{ headsign: "Riverside Dr",      arrival_time: now + 180  },
-                                     { headsign: "Riverside Dr",      arrival_time: now + 660  }] },
-  "400769::M15-SBS": { predictions: [{ headsign: "South Ferry",       arrival_time: now + 30   },
-                                     { headsign: "South Ferry",       arrival_time: now + 540  },
-                                     { headsign: "South Ferry",       arrival_time: now + 900  }] },
-  "R29::N":        { predictions: [{ headsign: "Coney Island",        arrival_time: now + 90   },
-                                   { headsign: "Coney Island",        arrival_time: now + 510  }] },
-  "R29::Q":        { predictions: [{ headsign: "96 St",               arrival_time: now + 0    }] },
-  "R29::R":        { predictions: [] },
-};
-
-const STOPS = [
-  {
-    stop_id: "640",
-    stop_name: "86 St",
-    type: "subway",
-    routes: [
-      { route_id: "4", direction: 1 },
-      { route_id: "5", direction: 1 },
-      { route_id: "6", direction: 1 },
-    ],
-  },
-  {
-    stop_id: "R29",
-    stop_name: "Times Sq–42 St",
-    type: "subway",
-    routes: [
-      { route_id: "N", direction: 1 },
-      { route_id: "Q", direction: 1 },
-      { route_id: "R", direction: 1 },
-    ],
-  },
-  {
-    stop_id: "400769",
-    stop_name: "86 St & Lexington Av",
-    type: "bus",
-    routes: [
-      { route_id: "M86-SBS", direction: 0 },
-      { route_id: "M15-SBS", direction: 1 },
-    ],
-  },
-];
-
-// ── Card logic (mirrors mta-transit-card.js) ─────────────────────────────────
-
+// ── MTA colors ────────────────────────────────────────────────────────────────
 const MTA_COLORS = {
-  "1":   { bg: "#EE352E", text: "#fff" },
-  "2":   { bg: "#EE352E", text: "#fff" },
-  "3":   { bg: "#EE352E", text: "#fff" },
-  "4":   { bg: "#00933C", text: "#fff" },
-  "5":   { bg: "#00933C", text: "#fff" },
-  "6":   { bg: "#00933C", text: "#fff" },
-  "7":   { bg: "#B933AD", text: "#fff" },
-  "A":   { bg: "#0039A6", text: "#fff" },
-  "C":   { bg: "#0039A6", text: "#fff" },
-  "E":   { bg: "#0039A6", text: "#fff" },
-  "B":   { bg: "#FF6319", text: "#fff" },
-  "D":   { bg: "#FF6319", text: "#fff" },
-  "F":   { bg: "#FF6319", text: "#fff" },
-  "M":   { bg: "#FF6319", text: "#fff" },
-  "G":   { bg: "#6CBE45", text: "#fff" },
-  "J":   { bg: "#996633", text: "#fff" },
-  "Z":   { bg: "#996633", text: "#fff" },
-  "L":   { bg: "#A7A9AC", text: "#fff" },
-  "N":   { bg: "#FCCC0A", text: "#000" },
-  "Q":   { bg: "#FCCC0A", text: "#000" },
-  "R":   { bg: "#FCCC0A", text: "#000" },
-  "W":   { bg: "#FCCC0A", text: "#000" },
-  "S":   { bg: "#808183", text: "#fff" },
-  "SIR": { bg: "#0039A6", text: "#fff" },
+  "1":{ bg:"#EE352E",text:"#fff" }, "2":{ bg:"#EE352E",text:"#fff" }, "3":{ bg:"#EE352E",text:"#fff" },
+  "4":{ bg:"#00933C",text:"#fff" }, "5":{ bg:"#00933C",text:"#fff" }, "6":{ bg:"#00933C",text:"#fff" },
+  "7":{ bg:"#B933AD",text:"#fff" },
+  "A":{ bg:"#0039A6",text:"#fff" }, "C":{ bg:"#0039A6",text:"#fff" }, "E":{ bg:"#0039A6",text:"#fff" },
+  "B":{ bg:"#FF6319",text:"#fff" }, "D":{ bg:"#FF6319",text:"#fff" }, "F":{ bg:"#FF6319",text:"#fff" }, "M":{ bg:"#FF6319",text:"#fff" },
+  "G":{ bg:"#6CBE45",text:"#fff" },
+  "J":{ bg:"#996633",text:"#fff" }, "Z":{ bg:"#996633",text:"#fff" },
+  "L":{ bg:"#A7A9AC",text:"#fff" },
+  "N":{ bg:"#FCCC0A",text:"#000" }, "Q":{ bg:"#FCCC0A",text:"#000" }, "R":{ bg:"#FCCC0A",text:"#000" }, "W":{ bg:"#FCCC0A",text:"#000" },
+  "S":{ bg:"#808183",text:"#fff" }, "SIR":{ bg:"#0039A6",text:"#fff" },
 };
+const BUS_COLOR = { bg:"#1D4E89", text:"#fff" };
+const lineStyle = id => MTA_COLORS[id] ?? BUS_COLOR;
+const isBullet  = id => id.length <= 2;
 
-const BUS_COLOR = { bg: "#1D4E89", text: "#fff" };
+// ── State ─────────────────────────────────────────────────────────────────────
+let apiUrl   = "http://localhost:8000";
+let metroId  = "mta";
+let linesData   = [];   // LineSummary[]
+let routeTypeMap = {};  // route_id → route_type (from line.type)
+let entries  = [];      // { stop_id, stop_name, stop_type, route_id, route_type, direction, direction_name }
+let liveData = {};
+let lastUpdate = null;
+let tickTimer  = null;
 
-function lineStyle(routeId) {
-  return MTA_COLORS[routeId] ?? BUS_COLOR;
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function apiFetch(path) {
+  const resp = await fetch(`${apiUrl}${path}`);
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
 }
 
-function isBullet(routeId) {
-  return routeId.length <= 2;
+// ── Step 1: Connect ───────────────────────────────────────────────────────────
+async function connect() {
+  apiUrl  = document.getElementById("api-url").value.trim();
+  metroId = document.getElementById("metro-id").value.trim();
+  const status = document.getElementById("connect-status");
+  status.textContent = "Connecting…";
+  status.className = "connect-status loading";
+
+  try {
+    const data = await apiFetch(`/metros/${metroId}/lines`);
+    linesData = data.lines ?? [];
+
+    // Populate route dropdown
+    const sel = document.getElementById("sel-route");
+    sel.innerHTML = `<option value="">— pick a route —</option>`;
+
+    // Build route → type map and group by line
+    routeTypeMap = {};
+    for (const line of linesData) {
+      for (const routeId of line.routes) {
+        routeTypeMap[routeId] = line.type ?? null;
+      }
+      if (!line.routes.length) continue;
+
+      const displayName = id => id.replace(/^MTA\s+\w+_/, "");
+
+      if (line.routes.length === 1) {
+        const opt = document.createElement("option");
+        opt.value = line.routes[0];
+        opt.textContent = displayName(line.routes[0]);
+        sel.appendChild(opt);
+      } else {
+        const group = document.createElement("optgroup");
+        group.label = line.long_name ?? line.id;
+        for (const routeId of line.routes) {
+          const opt = document.createElement("option");
+          opt.value = routeId;
+          opt.textContent = displayName(routeId);
+          group.appendChild(opt);
+        }
+        sel.appendChild(group);
+      }
+    }
+
+    sel.disabled = false;
+    status.textContent = `✓ Connected — ${linesData.length} lines loaded`;
+    status.className = "connect-status ok";
+  } catch (err) {
+    status.textContent = `✗ ${err.message}`;
+    status.className = "connect-status error";
+  }
 }
 
-function formatMinutes(arrivalEpoch, nowEpoch) {
-  const mins = Math.floor((arrivalEpoch - nowEpoch) / 60);
-  if (mins < 1) return `<span class="arr">ARR</span>`;
-  return `${mins}<span class="unit">m</span>`;
+// ── Step 2a: Route selected → load stops ─────────────────────────────────────
+async function onRouteChange() {
+  const routeId = document.getElementById("sel-route").value;
+  const stopSel = document.getElementById("sel-stop");
+  const dirSel  = document.getElementById("sel-direction");
+
+  stopSel.disabled = true;
+  dirSel.disabled  = true;
+  document.getElementById("btn-add").disabled = true;
+
+  if (!routeId) {
+    stopSel.innerHTML = `<option>— pick a route —</option>`;
+    dirSel.innerHTML  = `<option>— pick a stop —</option>`;
+    return;
+  }
+
+  stopSel.innerHTML = `<option>Loading…</option>`;
+  try {
+    const data  = await apiFetch(`/metros/${metroId}/stops/${routeId}`);
+    const stops = data.stops ?? [];
+    stopSel.innerHTML = `<option value="">— pick a stop —</option>`;
+    for (const s of stops) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.dataset.name = s.name ?? s.id;
+      opt.textContent  = s.name ?? s.id;
+      stopSel.appendChild(opt);
+    }
+    stopSel.disabled = false;
+  } catch (err) {
+    stopSel.innerHTML = `<option>Error: ${err.message}</option>`;
+  }
+
+  dirSel.innerHTML = `<option>— pick a stop —</option>`;
 }
 
-function render(data, stops, lastUpdate) {
-  const nowEpoch = Math.floor(Date.now() / 1000);
-  let stopsHtml = "";
+// ── Step 2b: Stop selected → load directions ──────────────────────────────────
+async function onStopChange() {
+  const routeId = document.getElementById("sel-route").value;
+  const dirSel  = document.getElementById("sel-direction");
 
+  dirSel.disabled = true;
+  document.getElementById("btn-add").disabled = true;
+
+  if (!document.getElementById("sel-stop").value) {
+    dirSel.innerHTML = `<option>— pick a stop —</option>`;
+    return;
+  }
+
+  dirSel.innerHTML = `<option>Loading…</option>`;
+  try {
+    const data = await apiFetch(`/metros/${metroId}/directions/${routeId}`);
+    const dirs = data.directions ?? [];
+    dirSel.innerHTML = `<option value="">All directions</option>`;
+    for (const d of dirs) {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.dataset.destination = d.destination;
+      opt.textContent = `${d.id} — ${d.destination}`;
+      dirSel.appendChild(opt);
+    }
+    dirSel.disabled = false;
+    document.getElementById("btn-add").disabled = false;
+  } catch (err) {
+    dirSel.innerHTML = `<option>Error: ${err.message}</option>`;
+  }
+}
+
+// ── Step 3: Add entry to card ─────────────────────────────────────────────────
+function addEntry() {
+  const routeSel = document.getElementById("sel-route");
+  const stopSel  = document.getElementById("sel-stop");
+  const dirSel   = document.getElementById("sel-direction");
+
+  const routeId  = routeSel.value;
+  const stopId   = stopSel.value;
+  const stopName = stopSel.options[stopSel.selectedIndex]?.dataset.name ?? stopId;
+  const dirVal   = dirSel.value;
+  const dirDest  = dirSel.options[dirSel.selectedIndex]?.dataset.destination ?? "";
+
+  if (!routeId || !stopId) return;
+
+  entries.push({
+    stop_id:        stopId,
+    stop_name:      stopName,
+    stop_type:      "subway",   // API doesn't expose type per stop; subway is default
+    route_id:       routeId,
+    route_type:     routeTypeMap[routeId] ?? null,
+    direction:      dirVal !== "" ? parseInt(dirVal) : null,
+    direction_name: dirDest,
+  });
+
+  renderEntries();
+  updateYaml();
+}
+
+function removeEntry(i) {
+  entries.splice(i, 1);
+  renderEntries();
+  updateYaml();
+}
+
+function renderEntries() {
+  const list = document.getElementById("entries-list");
+  document.getElementById("entry-count").textContent = entries.length;
+
+  if (!entries.length) {
+    list.innerHTML = `<div style="color:#444;font-size:12px;padding:4px 0">No entries yet</div>`;
+    return;
+  }
+
+  list.innerHTML = entries.map((e, i) => {
+    const { bg, text } = lineStyle(e.route_id);
+    const pill = !isBullet(e.route_id);
+    const badgeStyle = `background:${bg};color:${text}`;
+    const badge = pill
+      ? `<div class="entry-badge pill" style="${badgeStyle}">${e.route_id}</div>`
+      : `<div class="entry-badge" style="${badgeStyle}">${e.route_id}</div>`;
+    const dir = e.direction !== null ? ` · dir ${e.direction}` : "";
+    return `
+      <div class="entry">
+        ${badge}
+        <div class="entry-info">
+          <div class="entry-route">${e.stop_name}${dir}</div>
+          <div class="entry-stop">${e.stop_id}${e.direction_name ? " → " + e.direction_name : ""}</div>
+        </div>
+        <button class="btn-remove" onclick="removeEntry(${i})">×</button>
+      </div>`;
+  }).join("");
+}
+
+// ── YAML generation ───────────────────────────────────────────────────────────
+function buildYaml() {
+  if (!entries.length) return "# Add entries to generate YAML";
+
+  const limit   = parseInt(document.getElementById("limit").value)   || 3;
+  const refresh = parseInt(document.getElementById("refresh").value) || 30;
+
+  // Group entries by stop_id
+  const stops = [];
+  const stopIdx = {};
+  for (const e of entries) {
+    if (!(e.stop_id in stopIdx)) {
+      stopIdx[e.stop_id] = stops.length;
+      stops.push({ stop_id: e.stop_id, stop_name: e.stop_name, stop_type: e.stop_type, routes: [] });
+    }
+    stops[stopIdx[e.stop_id]].routes.push(e);
+  }
+
+  const stopsYaml = stops.map(s => {
+    const routeLines = s.routes.map(r => {
+      let line = `      - route_id: "${r.route_id}"`;
+      if (r.direction !== null) line += `\n        direction: ${r.direction}`;
+      if (r.route_type)         line += `\n        route_type: "${r.route_type}"`;
+      return line;
+    }).join("\n");
+    return `  - stop_id: "${s.stop_id}"
+    stop_name: "${s.stop_name}"
+    type: ${s.stop_type}
+    routes:
+${routeLines}`;
+  }).join("\n");
+
+  return `type: custom:mta-transit-card
+api_url: ${apiUrl}
+metro_id: ${metroId}
+refresh_seconds: ${refresh}
+predictions_per_route: ${limit}
+stops:
+${stopsYaml}`;
+}
+
+function updateYaml() {
+  document.getElementById("yaml-output").value = buildYaml();
+}
+
+function copyYaml() {
+  const btn = document.getElementById("copy-btn");
+  navigator.clipboard.writeText(document.getElementById("yaml-output").value).then(() => {
+    btn.textContent = "✓ Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy YAML"; btn.classList.remove("copied"); }, 2000);
+  });
+}
+
+// ── Card rendering ────────────────────────────────────────────────────────────
+function fmtMins(arrEpoch, nowEpoch) {
+  const m = Math.floor((arrEpoch - nowEpoch) / 60);
+  if (m < 1) return `<span class="mta-arr">ARR</span>`;
+  return `${m}<span class="mta-unit">m</span>`;
+}
+
+function renderCard() {
+  if (!entries.length) { document.getElementById("card-root").innerHTML = ""; return; }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // Group entries by stop_id for display
+  const stops = [];
+  const stopIdx = {};
+  for (const e of entries) {
+    if (!(e.stop_id in stopIdx)) {
+      stopIdx[e.stop_id] = stops.length;
+      stops.push({ ...e, routes: [] });
+    }
+    stops[stopIdx[e.stop_id]].routes.push(e);
+  }
+
+  let html = "";
   for (const stop of stops) {
-    const icon = stop.type === "bus" ? "🚌" : "🚇";
+    const icon = stop.stop_type === "bus" ? "🚌" : "🚇";
     let routesHtml = "";
 
     for (const route of stop.routes) {
-      const key = `${stop.stop_id}::${route.route_id}`;
-      const preds = data[key]?.predictions ?? null;
+      const key   = `${route.stop_id}::${route.route_id}::${route.direction ?? "any"}`;
+      const preds = liveData[key]?.predictions ?? null;
       const { bg, text } = lineStyle(route.route_id);
-      const pill = !isBullet(route.route_id);
+      const badge = isBullet(route.route_id)
+        ? `<div class="mta-bullet" style="background:${bg};color:${text}">${route.route_id}</div>`
+        : `<div class="mta-pill"   style="background:${bg};color:${text}">${route.route_id}</div>`;
 
-      const bulletHtml = pill
-        ? `<div class="pill" style="background:${bg};color:${text}">${route.route_id}</div>`
-        : `<div class="bullet" style="background:${bg};color:${text}">${route.route_id}</div>`;
-
-      let headsign = "";
-      let timesHtml = "";
-
-      if (preds === null) {
-        timesHtml = `<span class="times empty">—</span>`;
-      } else if (preds.length === 0) {
-        timesHtml = `<span class="times empty">No service</span>`;
+      let headsign = "", timesHtml = "";
+      if (preds == null) {
+        timesHtml = `<span class="mta-times empty">—</span>`;
+      } else if (!preds.length) {
+        timesHtml = `<span class="mta-times empty">No service</span>`;
       } else {
         headsign = preds[0]?.headsign ?? "";
-        const parts = preds
-          .filter(p => p.arrival_time)
-          .slice(0, 3)
-          .map(p => formatMinutes(p.arrival_time, nowEpoch));
-        timesHtml = `<span class="times">${parts.join('<span class="dot">·</span>')}</span>`;
+        const parts = preds.filter(p => p.arrival_time).slice(0, 3)
+          .map(p => fmtMins(p.arrival_time, now));
+        timesHtml = `<span class="mta-times">${parts.join('<span class="mta-dot">·</span>')}</span>`;
       }
 
       routesHtml += `
-        <div class="route-row">
-          ${bulletHtml}
-          <div class="headsign">${headsign}</div>
+        <div class="mta-route-row">
+          ${badge}
+          <div class="mta-headsign">${headsign}</div>
           ${timesHtml}
         </div>`;
     }
 
-    stopsHtml += `
-      <div class="stop">
-        <div class="stop-header">
-          <span class="stop-icon">${icon}</span>
-          <span class="stop-name">${stop.stop_name}</span>
+    html += `
+      <div class="mta-stop">
+        <div class="mta-stop-header">
+          <span class="mta-stop-icon">${icon}</span>
+          <span class="mta-stop-name">${stop.stop_name}</span>
         </div>
         ${routesHtml}
       </div>`;
   }
 
-  const updatedStr = lastUpdate
+  const updated = lastUpdate
     ? lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "…";
 
-  return `
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      .board {
-        background: #0d0d0d;
-        border-radius: 14px;
-        padding: 14px 16px;
-        color: #fff;
-        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      }
-      .stop + .stop {
-        margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px solid #222;
-      }
-      .stop-header {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        margin-bottom: 8px;
-      }
-      .stop-icon { font-size: 13px; }
-      .stop-name {
-        font-size: 11px;
-        font-weight: 700;
-        color: #777;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-      }
-      .route-row {
-        display: grid;
-        grid-template-columns: auto 1fr auto;
-        align-items: center;
-        column-gap: 10px;
-        padding: 4px 0;
-        min-height: 36px;
-      }
-      .bullet {
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 800;
-        font-size: 15px;
-        flex-shrink: 0;
-        letter-spacing: -0.02em;
-      }
-      .pill {
-        height: 26px;
-        padding: 0 8px;
-        border-radius: 13px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 11px;
-        flex-shrink: 0;
-        white-space: nowrap;
-        letter-spacing: 0.02em;
-      }
-      .headsign {
-        font-size: 14px;
-        color: #ccc;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .times {
-        font-size: 14px;
-        font-weight: 600;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-        color: #fff;
-        text-align: right;
-      }
-      .times.empty { color: #444; font-weight: 400; }
-      .dot { color: #3a3a3a; margin: 0 5px; }
-      .unit { font-size: 10px; color: #666; margin-left: 1px; }
-      .arr { color: #ff5c5c; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-      .footer {
-        margin-top: 12px;
-        padding-top: 8px;
-        border-top: 1px solid #1a1a1a;
-        font-size: 10px;
-        color: #383838;
-        display: flex;
-        justify-content: space-between;
-      }
-    </style>
-    <div class="board">
-      ${stopsHtml}
-      <div class="footer">
-        <span>MTA Transit</span>
-        <span>Updated ${updatedStr}</span>
-      </div>
+  document.getElementById("card-root").innerHTML = `
+    <div class="mta-board">
+      ${html}
+      <div class="mta-footer"><span>MTA Transit</span><span>Updated ${updated}</span></div>
     </div>`;
 }
 
-// ── Mount & live-tick ────────────────────────────────────────────────────────
-const root = document.getElementById("card-root");
-let lastUpdate = new Date();
+// ── Fetch predictions ─────────────────────────────────────────────────────────
+async function fetchAndRender() {
+  if (!entries.length) return;
+  const limit  = parseInt(document.getElementById("limit").value) || 3;
+  const status = document.getElementById("p-status");
+  const debug  = document.getElementById("debug-output");
+  const logs   = [];
 
-function refresh() {
-  root.innerHTML = render(MOCK_DATA, STOPS, lastUpdate);
+  status.textContent = "Fetching…";
+  status.className = "p-status";
+
+  for (const e of entries) {
+    const key  = `${e.stop_id}::${e.route_id}::${e.direction ?? "any"}`;
+    const url  = `${apiUrl}/metros/${metroId}/predictions`;
+    const body = {
+      stop_id:    e.stop_id,
+      routes:     [e.route_id],
+      direction:  e.direction,
+      route_type: e.route_type,
+      limit,
+    };
+    logs.push(`→ POST ${url}\n${JSON.stringify(body, null, 2)}`);
+    try {
+      const resp = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await resp.text();
+      logs.push(`← ${resp.status} ${resp.statusText}\n${text}`);
+      if (resp.ok) {
+        liveData[key] = JSON.parse(text);
+        const count = liveData[key].predictions?.length ?? 0;
+        status.textContent = `✓ ${e.route_id} @ ${e.stop_name}: ${count} predictions`;
+        status.className = "p-status ok";
+      } else {
+        status.textContent = `✗ ${resp.status} ${resp.statusText}`;
+        status.className = "p-status error";
+      }
+    } catch (err) {
+      logs.push(`✗ ${err.message}`);
+      status.textContent = `✗ ${err.message}`;
+      status.className = "p-status error";
+    }
+  }
+
+  debug.textContent = logs.join("\n\n");
+  lastUpdate = new Date();
+  renderCard();
+
+  clearInterval(tickTimer);
+  tickTimer = setInterval(renderCard, 1000);
 }
 
-refresh();
-// Re-render every second so the countdowns tick live
-setInterval(refresh, 1000);
+// ── Init ──────────────────────────────────────────────────────────────────────
+renderEntries();
+updateYaml();
 </script>
 </body>
 </html>
