@@ -220,6 +220,7 @@ class MtaTransitCard extends HTMLElement {
           routes:     [route.route_id],
           direction:  route.direction ?? null,
           limit:      this._config.predictions_per_route ?? 3,
+          route_type: route.route_type ?? null,
         }),
       });
 
