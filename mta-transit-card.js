@@ -210,7 +210,7 @@ class MtaTransitCard extends HTMLElement {
   }
 
   async _fetchRoute(apiUrl, metroId, stop, route) {
-    const key = `${stop.stop_id}::${route.route_id}`;
+    const key = `${stop.stop_id}::${route.route_id}::${route.direction ?? "any"}`;
     try {
       const resp = await fetch(`${apiUrl}/metros/${metroId}/predictions`, {
         method: "POST",
@@ -243,7 +243,7 @@ class MtaTransitCard extends HTMLElement {
       let routesHtml = "";
 
       for (const route of stop.routes) {
-        const key  = `${stop.stop_id}::${route.route_id}`;
+        const key  = `${stop.stop_id}::${route.route_id}::${route.direction ?? "any"}`;
         const preds = this._data[key];
         const { bg, text } = lineStyle(route.route_id);
         const pill = !isBullet(route.route_id);
@@ -255,7 +255,7 @@ class MtaTransitCard extends HTMLElement {
         let headsign = "";
         let timesHtml = "";
 
-        if (preds === null) {
+        if (preds == null) {
           timesHtml = `<span class="times empty">—</span>`;
         } else if (preds.length === 0) {
           timesHtml = `<span class="times empty">No service</span>`;
