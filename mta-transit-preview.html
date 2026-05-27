@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTA Transit Card Preview</title>
+  <style>
+    body {
+      background: #1c1c1e;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 20px;
+      min-height: 100vh;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    .card-wrapper {
+      width: 380px;
+    }
+    h3 {
+      color: #555;
+      font-family: sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 0 10px 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="card-wrapper">
+  <h3>Preview — mock data</h3>
+  <div id="card-root"></div>
+</div>
+
+<script>
+// ── Mock data ────────────────────────────────────────────────────────────────
+const now = Math.floor(Date.now() / 1000);
+
+const MOCK_DATA = {
+  "640::4":        { predictions: [{ headsign: "Woodlawn",            arrival_time: now + 120  },
+                                   { headsign: "Woodlawn",            arrival_time: now + 480  },
+                                   { headsign: "Woodlawn",            arrival_time: now + 840  }] },
+  "640::5":        { predictions: [{ headsign: "Eastchester–Dyre Av", arrival_time: now + 45   },
+                                   { headsign: "Eastchester–Dyre Av", arrival_time: now + 390  }] },
+  "640::6":        { predictions: [{ headsign: "Pelham Bay Park",     arrival_time: now + 210  },
+                                   { headsign: "Pelham Bay Park",     arrival_time: now + 600  },
+                                   { headsign: "Pelham Bay Park",     arrival_time: now + 970  }] },
+  "400769::M86-SBS": { predictions: [{ headsign: "Riverside Dr",      arrival_time: now + 180  },
+                                     { headsign: "Riverside Dr",      arrival_time: now + 660  }] },
+  "400769::M15-SBS": { predictions: [{ headsign: "South Ferry",       arrival_time: now + 30   },
+                                     { headsign: "South Ferry",       arrival_time: now + 540  },
+                                     { headsign: "South Ferry",       arrival_time: now + 900  }] },
+  "R29::N":        { predictions: [{ headsign: "Coney Island",        arrival_time: now + 90   },
+                                   { headsign: "Coney Island",        arrival_time: now + 510  }] },
+  "R29::Q":        { predictions: [{ headsign: "96 St",               arrival_time: now + 0    }] },
+  "R29::R":        { predictions: [] },
+};
+
+const STOPS = [
+  {
+    stop_id: "640",
+    stop_name: "86 St",
+    type: "subway",
+    routes: [
+      { route_id: "4", direction: 1 },
+      { route_id: "5", direction: 1 },
+      { route_id: "6", direction: 1 },
+    ],
+  },
+  {
+    stop_id: "R29",
+    stop_name: "Times Sq–42 St",
+    type: "subway",
+    routes: [
+      { route_id: "N", direction: 1 },
+      { route_id: "Q", direction: 1 },
+      { route_id: "R", direction: 1 },
+    ],
+  },
+  {
+    stop_id: "400769",
+    stop_name: "86 St & Lexington Av",
+    type: "bus",
+    routes: [
+      { route_id: "M86-SBS", direction: 0 },
+      { route_id: "M15-SBS", direction: 1 },
+    ],
+  },
+];
+
+// ── Card logic (mirrors mta-transit-card.js) ─────────────────────────────────
+
+const MTA_COLORS = {
+  "1":   { bg: "#EE352E", text: "#fff" },
+  "2":   { bg: "#EE352E", text: "#fff" },
+  "3":   { bg: "#EE352E", text: "#fff" },
+  "4":   { bg: "#00933C", text: "#fff" },
+  "5":   { bg: "#00933C", text: "#fff" },
+  "6":   { bg: "#00933C", text: "#fff" },
+  "7":   { bg: "#B933AD", text: "#fff" },
+  "A":   { bg: "#0039A6", text: "#fff" },
+  "C":   { bg: "#0039A6", text: "#fff" },
+  "E":   { bg: "#0039A6", text: "#fff" },
+  "B":   { bg: "#FF6319", text: "#fff" },
+  "D":   { bg: "#FF6319", text: "#fff" },
+  "F":   { bg: "#FF6319", text: "#fff" },
+  "M":   { bg: "#FF6319", text: "#fff" },
+  "G":   { bg: "#6CBE45", text: "#fff" },
+  "J":   { bg: "#996633", text: "#fff" },
+  "Z":   { bg: "#996633", text: "#fff" },
+  "L":   { bg: "#A7A9AC", text: "#fff" },
+  "N":   { bg: "#FCCC0A", text: "#000" },
+  "Q":   { bg: "#FCCC0A", text: "#000" },
+  "R":   { bg: "#FCCC0A", text: "#000" },
+  "W":   { bg: "#FCCC0A", text: "#000" },
+  "S":   { bg: "#808183", text: "#fff" },
+  "SIR": { bg: "#0039A6", text: "#fff" },
+};
+
+const BUS_COLOR = { bg: "#1D4E89", text: "#fff" };
+
+function lineStyle(routeId) {
+  return MTA_COLORS[routeId] ?? BUS_COLOR;
+}
+
+function isBullet(routeId) {
+  return routeId.length <= 2;
+}
+
+function formatMinutes(arrivalEpoch, nowEpoch) {
+  const mins = Math.floor((arrivalEpoch - nowEpoch) / 60);
+  if (mins < 1) return `<span class="arr">ARR</span>`;
+  return `${mins}<span class="unit">m</span>`;
+}
+
+function render(data, stops, lastUpdate) {
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  let stopsHtml = "";
+
+  for (const stop of stops) {
+    const icon = stop.type === "bus" ? "🚌" : "🚇";
+    let routesHtml = "";
+
+    for (const route of stop.routes) {
+      const key = `${stop.stop_id}::${route.route_id}`;
+      const preds = data[key]?.predictions ?? null;
+      const { bg, text } = lineStyle(route.route_id);
+      const pill = !isBullet(route.route_id);
+
+      const bulletHtml = pill
+        ? `<div class="pill" style="background:${bg};color:${text}">${route.route_id}</div>`
+        : `<div class="bullet" style="background:${bg};color:${text}">${route.route_id}</div>`;
+
+      let headsign = "";
+      let timesHtml = "";
+
+      if (preds === null) {
+        timesHtml = `<span class="times empty">—</span>`;
+      } else if (preds.length === 0) {
+        timesHtml = `<span class="times empty">No service</span>`;
+      } else {
+        headsign = preds[0]?.headsign ?? "";
+        const parts = preds
+          .filter(p => p.arrival_time)
+          .slice(0, 3)
+          .map(p => formatMinutes(p.arrival_time, nowEpoch));
+        timesHtml = `<span class="times">${parts.join('<span class="dot">·</span>')}</span>`;
+      }
+
+      routesHtml += `
+        <div class="route-row">
+          ${bulletHtml}
+          <div class="headsign">${headsign}</div>
+          ${timesHtml}
+        </div>`;
+    }
+
+    stopsHtml += `
+      <div class="stop">
+        <div class="stop-header">
+          <span class="stop-icon">${icon}</span>
+          <span class="stop-name">${stop.stop_name}</span>
+        </div>
+        ${routesHtml}
+      </div>`;
+  }
+
+  const updatedStr = lastUpdate
+    ? lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "…";
+
+  return `
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      .board {
+        background: #0d0d0d;
+        border-radius: 14px;
+        padding: 14px 16px;
+        color: #fff;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+      .stop + .stop {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid #222;
+      }
+      .stop-header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+      }
+      .stop-icon { font-size: 13px; }
+      .stop-name {
+        font-size: 11px;
+        font-weight: 700;
+        color: #777;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .route-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        column-gap: 10px;
+        padding: 4px 0;
+        min-height: 36px;
+      }
+      .bullet {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 15px;
+        flex-shrink: 0;
+        letter-spacing: -0.02em;
+      }
+      .pill {
+        height: 26px;
+        padding: 0 8px;
+        border-radius: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 11px;
+        flex-shrink: 0;
+        white-space: nowrap;
+        letter-spacing: 0.02em;
+      }
+      .headsign {
+        font-size: 14px;
+        color: #ccc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .times {
+        font-size: 14px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        color: #fff;
+        text-align: right;
+      }
+      .times.empty { color: #444; font-weight: 400; }
+      .dot { color: #3a3a3a; margin: 0 5px; }
+      .unit { font-size: 10px; color: #666; margin-left: 1px; }
+      .arr { color: #ff5c5c; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+      .footer {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid #1a1a1a;
+        font-size: 10px;
+        color: #383838;
+        display: flex;
+        justify-content: space-between;
+      }
+    </style>
+    <div class="board">
+      ${stopsHtml}
+      <div class="footer">
+        <span>MTA Transit</span>
+        <span>Updated ${updatedStr}</span>
+      </div>
+    </div>`;
+}
+
+// ── Mount & live-tick ────────────────────────────────────────────────────────
+const root = document.getElementById("card-root");
+let lastUpdate = new Date();
+
+function refresh() {
+  root.innerHTML = render(MOCK_DATA, STOPS, lastUpdate);
+}
+
+refresh();
+// Re-render every second so the countdowns tick live
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

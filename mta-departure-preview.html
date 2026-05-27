@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTA Departure Card Preview</title>
+  <style>
+    body {
+      background: #1c1c1e;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 20px;
+      min-height: 100vh;
+      margin: 0;
+      box-sizing: border-box;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .col { display: flex; flex-direction: column; gap: 16px; width: 380px; }
+    h3 {
+      color: #555;
+      font-family: sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 0 10px 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="col">
+  <h3>Departure Planner</h3>
+  <div id="card-departure"></div>
+</div>
+
+<div class="col">
+  <h3>Arrival Board</h3>
+  <div id="card-arrivals"></div>
+</div>
+
+<script>
+// ── Shared MTA colors ────────────────────────────────────────────────────────
+const MTA_COLORS = {
+  "1":   { bg: "#EE352E", text: "#fff" }, "2": { bg: "#EE352E", text: "#fff" },
+  "3":   { bg: "#EE352E", text: "#fff" }, "4": { bg: "#00933C", text: "#fff" },
+  "5":   { bg: "#00933C", text: "#fff" }, "6": { bg: "#00933C", text: "#fff" },
+  "7":   { bg: "#B933AD", text: "#fff" }, "A": { bg: "#0039A6", text: "#fff" },
+  "C":   { bg: "#0039A6", text: "#fff" }, "E": { bg: "#0039A6", text: "#fff" },
+  "B":   { bg: "#FF6319", text: "#fff" }, "D": { bg: "#FF6319", text: "#fff" },
+  "F":   { bg: "#FF6319", text: "#fff" }, "M": { bg: "#FF6319", text: "#fff" },
+  "G":   { bg: "#6CBE45", text: "#fff" }, "J": { bg: "#996633", text: "#fff" },
+  "Z":   { bg: "#996633", text: "#fff" }, "L": { bg: "#A7A9AC", text: "#fff" },
+  "N":   { bg: "#FCCC0A", text: "#000" }, "Q": { bg: "#FCCC0A", text: "#000" },
+  "R":   { bg: "#FCCC0A", text: "#000" }, "W": { bg: "#FCCC0A", text: "#000" },
+  "S":   { bg: "#808183", text: "#fff" },
+};
+const BUS_COLOR = { bg: "#1D4E89", text: "#fff" };
+
+function lineStyle(id) { return MTA_COLORS[id] ?? BUS_COLOR; }
+function isBullet(id)  { return id.length <= 2; }
+
+function bulletHtml(routeId) {
+  const { bg, text } = lineStyle(routeId);
+  if (isBullet(routeId))
+    return `<div class="bullet" style="background:${bg};color:${text}">${routeId}</div>`;
+  return `<div class="pill" style="background:${bg};color:${text}">${routeId}</div>`;
+}
+
+function fmtTime(epoch) {
+  return new Date(epoch * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function fmtCountdown(leaveByEpoch) {
+  const mins = Math.round((leaveByEpoch - Date.now() / 1000) / 60);
+  if (mins < 0)   return { label: "You should have left already", cls: "urgent" };
+  if (mins === 0) return { label: "Leave now",                     cls: "urgent" };
+  if (mins <= 5)  return { label: `Leave in ${mins} min`,          cls: "urgent" };
+  if (mins <= 15) return { label: `Leave in ${mins} min`,          cls: "soon" };
+  return             { label: `Leave in ${mins} min`,              cls: "comfortable" };
+}
+
+function formatMins(arrEpoch, nowEpoch) {
+  const m = Math.floor((arrEpoch - nowEpoch) / 60);
+  if (m < 1) return `<span class="arr">ARR</span>`;
+  return `${m}<span class="unit">m</span>`;
+}
+
+// ── Shared CSS for both cards ────────────────────────────────────────────────
+const SHARED_CSS = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .board {
+    background: #0d0d0d; border-radius: 14px; padding: 16px; color: #fff;
+  }
+  .bullet {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px; flex-shrink: 0;
+  }
+  .pill {
+    height: 26px; padding: 0 8px; border-radius: 13px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; flex-shrink: 0; white-space: nowrap;
+  }
+  .footer {
+    margin-top: 12px; padding-top: 8px; border-top: 1px solid #1a1a1a;
+    font-size: 10px; color: #383838;
+    display: flex; justify-content: space-between;
+  }
+`;
+
+// ── DEPARTURE CARD ───────────────────────────────────────────────────────────
+const now = Math.floor(Date.now() / 1000);
+
+// Scenario: event in ~45 min, need to leave in ~18 min
+const MOCK_PLAN = {
+  event: {
+    title: "Product Review",
+    start_time: now + 45 * 60,
+    location: "1 World Trade Center",
+  },
+  plan: {
+    leave_by:      now + 18 * 60,
+    total_minutes: 27,
+    steps: [
+      {
+        type: "walk",
+        minutes: 5,
+        instruction: "Walk to 86 St station",
+      },
+      {
+        type: "transit",
+        line: "4",
+        headsign: "New Lots Av",
+        from_stop: "86 St",
+        to_stop: "Fulton St",
+        minutes: 16,
+        departure_time: now + 23 * 60,
+      },
+      {
+        type: "walk",
+        minutes: 6,
+        instruction: "Walk to 1 World Trade Center",
+      },
+    ],
+  },
+};
+
+const DEPARTURE_CSS = `
+  ${SHARED_CSS}
+  .section-label {
+    font-size: 10px; font-weight: 700; color: #555;
+    text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px;
+  }
+  .event-title { font-size: 18px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 4px; }
+  .event-meta { font-size: 13px; color: #777; display: flex; flex-wrap: wrap; gap: 8px; }
+  .event-meta span { display: flex; align-items: center; gap: 4px; }
+  .divider { border: none; border-top: 1px solid #222; margin: 14px 0; }
+  .leave-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .leave-time { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  .leave-countdown { font-size: 13px; font-weight: 500; margin-bottom: 14px; }
+  .comfortable .leave-time, .comfortable .leave-countdown { color: #4caf50; }
+  .soon .leave-time, .soon .leave-countdown               { color: #ffb300; }
+  .urgent .leave-time, .urgent .leave-countdown           { color: #ff5c5c; }
+  .steps { display: flex; flex-direction: column; }
+  .step {
+    display: grid; grid-template-columns: 30px 1fr; column-gap: 10px;
+    align-items: start; position: relative; padding: 4px 0;
+  }
+  .step:not(:last-child) .step-icon::after {
+    content: ""; display: block; width: 2px; background: #2a2a2a;
+    position: absolute; left: 14px; top: 32px; bottom: -4px;
+  }
+  .step-icon { display: flex; justify-content: center; align-items: flex-start; padding-top: 2px; position: relative; min-height: 44px; }
+  .walk-icon {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: #1e1e1e; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .step-body { padding: 4px 0 12px; }
+  .step-main { font-size: 14px; color: #e0e0e0; line-height: 1.3; }
+  .step-detail { font-size: 12px; color: #555; margin-top: 2px; }
+`;
+
+function renderDepartureCard(plan) {
+  const { cls, label } = fmtCountdown(plan.plan.leave_by);
+  const { event } = plan;
+  const { leave_by, total_minutes, steps } = plan.plan;
+
+  const stepsHtml = steps.map(step => {
+    if (step.type === "walk") {
+      return `
+        <div class="step">
+          <div class="step-icon"><div class="walk-icon">🚶</div></div>
+          <div class="step-body">
+            <div class="step-main">${step.instruction}</div>
+            <div class="step-detail">${step.minutes} min walk</div>
+          </div>
+        </div>`;
+    }
+    if (step.type === "transit") {
+      const dep = step.departure_time ? ` · departs ${fmtTime(step.departure_time)}` : "";
+      return `
+        <div class="step">
+          <div class="step-icon">${bulletHtml(step.line)}</div>
+          <div class="step-body">
+            <div class="step-main">${step.from_stop} → ${step.to_stop}</div>
+            <div class="step-detail">${step.headsign} · ${step.minutes} min${dep}</div>
+          </div>
+        </div>`;
+    }
+    return "";
+  }).join("");
+
+  return `
+    <style>${DEPARTURE_CSS}</style>
+    <div class="board">
+      <div class="section-label">📅 Next Event</div>
+      <div class="event-title">${event.title}</div>
+      <div class="event-meta">
+        <span>🕐 ${fmtTime(event.start_time)}</span>
+        <span>📍 ${event.location}</span>
+      </div>
+      <hr class="divider" />
+      <div class="${cls}">
+        <div class="leave-row">
+          <div class="leave-time">Leave by ${fmtTime(leave_by)}</div>
+        </div>
+        <div class="leave-countdown">${label} · ${total_minutes} min trip</div>
+      </div>
+      <hr class="divider" />
+      <div class="steps">${stepsHtml}</div>
+      <div class="footer">
+        <span>Departure Planner</span>
+        <span>Updated just now</span>
+      </div>
+    </div>`;
+}
+
+// ── ARRIVALS CARD (copied from mta-transit-preview.html) ────────────────────
+const ARRIVALS_DATA = {
+  "640::4":          [{ headsign: "Woodlawn",            arrival_time: now + 120 },
+                      { headsign: "Woodlawn",            arrival_time: now + 480 }],
+  "640::5":          [{ headsign: "Eastchester–Dyre Av", arrival_time: now + 45  },
+                      { headsign: "Eastchester–Dyre Av", arrival_time: now + 390 }],
+  "640::6":          [{ headsign: "Pelham Bay Park",     arrival_time: now + 210 },
+                      { headsign: "Pelham Bay Park",     arrival_time: now + 600 }],
+  "400769::M86-SBS": [{ headsign: "Riverside Dr",        arrival_time: now + 180 },
+                      { headsign: "Riverside Dr",        arrival_time: now + 660 }],
+};
+
+const ARRIVALS_STOPS = [
+  { stop_id: "640",    stop_name: "86 St",                  type: "subway",
+    routes: [{ route_id: "4" }, { route_id: "5" }, { route_id: "6" }] },
+  { stop_id: "400769", stop_name: "86 St & Lexington Av",   type: "bus",
+    routes: [{ route_id: "M86-SBS" }] },
+];
+
+const ARRIVALS_CSS = `
+  ${SHARED_CSS}
+  .stop + .stop { margin-top: 14px; padding-top: 14px; border-top: 1px solid #222; }
+  .stop-header { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+  .stop-icon { font-size: 13px; }
+  .stop-name { font-size: 11px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.1em; }
+  .route-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 10px; padding: 4px 0; min-height: 36px; }
+  .headsign { font-size: 14px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .times { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: #fff; text-align: right; }
+  .times.empty { color: #444; font-weight: 400; }
+  .dot { color: #3a3a3a; margin: 0 5px; }
+  .unit { font-size: 10px; color: #666; margin-left: 1px; }
+  .arr { color: #ff5c5c; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+`;
+
+function renderArrivalsCard() {
+  const n = Math.floor(Date.now() / 1000);
+  let stopsHtml = "";
+  for (const stop of ARRIVALS_STOPS) {
+    const icon = stop.type === "bus" ? "🚌" : "🚇";
+    let routesHtml = "";
+    for (const route of stop.routes) {
+      const preds = ARRIVALS_DATA[`${stop.stop_id}::${route.route_id}`] ?? [];
+      const { bg, text } = lineStyle(route.route_id);
+      const pill = !isBullet(route.route_id);
+      const bHtml = pill
+        ? `<div class="pill" style="background:${bg};color:${text}">${route.route_id}</div>`
+        : `<div class="bullet" style="background:${bg};color:${text}">${route.route_id}</div>`;
+      const headsign = preds[0]?.headsign ?? "";
+      const parts = preds.slice(0, 3).map(p => formatMins(p.arrival_time, n));
+      routesHtml += `
+        <div class="route-row">
+          ${bHtml}
+          <div class="headsign">${headsign}</div>
+          <span class="times">${parts.join('<span class="dot">·</span>')}</span>
+        </div>`;
+    }
+    stopsHtml += `
+      <div class="stop">
+        <div class="stop-header">
+          <span class="stop-icon">${icon}</span>
+          <span class="stop-name">${stop.stop_name}</span>
+        </div>
+        ${routesHtml}
+      </div>`;
+  }
+  return `
+    <style>${ARRIVALS_CSS}</style>
+    <div class="board">
+      ${stopsHtml}
+      <div class="footer"><span>MTA Transit</span><span>Updated just now</span></div>
+    </div>`;
+}
+
+// ── Mount & live tick ────────────────────────────────────────────────────────
+function refresh() {
+  document.getElementById("card-departure").innerHTML = renderDepartureCard(MOCK_PLAN);
+  document.getElementById("card-arrivals").innerHTML  = renderArrivalsCard();
+}
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>
