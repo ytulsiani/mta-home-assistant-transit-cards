@@ -211,7 +211,8 @@ class MtaTransitCard extends HTMLElement {
   }
 
   async _fetchRoute(apiUrl, metroId, stop, route) {
-    const key = `${stop.stop_id}::${route.route_id}`;
+    const dir = (route.direction !== null && route.direction !== undefined) ? route.direction : "any";
+    const key = `${stop.stop_id}::${route.route_id}::${dir}`;
     try {
       const resp = await fetch(`${apiUrl}/metros/${metroId}/predictions`, {
         method: "POST",
@@ -243,7 +244,8 @@ class MtaTransitCard extends HTMLElement {
       let routesHtml = "";
 
       for (const route of stop.routes) {
-        const key  = `${stop.stop_id}::${route.route_id}`;
+        const dir  = (route.direction !== null && route.direction !== undefined) ? route.direction : "any";
+        const key  = `${stop.stop_id}::${route.route_id}::${dir}`;
         const preds = this._data[key];
         const { bg, text } = lineStyle(route.route_id);
         const pill = !isBullet(route.route_id);
